@@ -1,12 +1,12 @@
 #include <AS3.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <setjmp.h>
 #include "yajl/yajl_parse.h"
 #include "yajl/yajl_gen.h"
  
 
-#include <stdlib.h>
-#include <string.h>
 
 static int reformat_null(void * ctx)
 {
@@ -156,7 +156,6 @@ decode(void * data, AS3_Val args)
             unsigned int len;
             yajl_gen_get_buf(g, &buf, &len);
             result = AS3_StringN(buf, len);
-           // fwrite(buf, 1, len, stdout);
             yajl_gen_clear(g);
         }
 
