@@ -47,12 +47,12 @@ end
 desc "Compile SWC"
 task :swc do
   Dir.chdir(WORKING_DIR) do
-    run "#{CC} -Wall -I. -swc -O3 #{AS3_SRC_DIR+"/yajl-as3.c"} -L. -lyajl -o yajl.swc"
+    run "#{CC} -Wall -I. -swc#{ENV["VERBOSE"] ? " -DVERBOSE" : "-O3"} #{AS3_SRC_DIR+"/yajl-as3.c"} -L. -lyajl -o yajl.swc"
   end
 end
 
 desc "Install yajl.swc somewhere"
-task :install do
+task :install => :swc do
 
   path = File.expand_path(ENV["TO"] || STDIN.gets.chomp)
 
