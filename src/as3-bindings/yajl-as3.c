@@ -83,6 +83,17 @@ yajl_gen as3_gen_alloc(const yajl_gen_config * config,
 #ifdef VERBOSE
 #define LOG_C(cvalue) sztrace(cvalue); 
 #define LOG_AS3(as3value) AS3_Trace(as3value);
+#else
+#define LOG_C(cvalue)
+#define LOG_AS3(cvalue)
+#endif
+
+#ifdef DEBUG_LOG
+#define DEBUG_LOG_C(cvalue) LOG_C(cvalue)
+#define DEBUG_LOG_AS3(as3value) LOG_AS3(as3value)
+#else
+#define DEBUG_LOG_C(cvalue)
+#define DEBUG_LOG_AS3(cvalue)
 #endif
 
 #define IS_ARRAY(value) \
@@ -119,16 +130,16 @@ static void yajl_check_end(void * ctx) {
     LOG_AS3(wrapper->ctx)
   }
   else {
-    LOG_C("Continue")
-    LOG_AS3(AS3_Int(stack_length))
-    LOG_AS3(AS3_Int(wrapper->nested_hash_level))
-    LOG_AS3(AS3_Int(wrapper->nested_array_level))
+    DEBUG_LOG_C("Continue")
+    DEBUG_LOG_AS3(AS3_Int(stack_length))
+    DEBUG_LOG_AS3(AS3_Int(wrapper->nested_hash_level))
+    DEBUG_LOG_AS3(AS3_Int(wrapper->nested_array_level))
   }
 }
 
 static void yajl_set_static_value(void * ctx, AS3_Val val) {
   yajl_gen wrapper = (yajl_gen) ctx;
-  LOG_AS3(val)
+  DEBUG_LOG_AS3(val)
   int stack_length = AS3_IntValue(AS3_GetS(wrapper->stack,"length"));
   if (stack_length > 0) {
     AS3_Val lastEntry = AS3_CallS("pop",wrapper->stack,AS3_Array(""));
@@ -261,14 +272,92 @@ static yajl_callbacks callbacks = {
   yajl_found_end_array
 };
 
-AS3_Val decode(void * data, AS3_Val args) {
-  yajl_handle hand;
-  /* generator config */
-  yajl_gen_config conf = { 1, "  " };
-  yajl_gen g;
+struct as3_yajl_wrapper_t {
+  yajl_gen generator;
+  yajl_handle handle;
+  yajl_gen_config config;
+  yajl_parser_config parser_config;
+};
+
+
+typedef struct as3_yajl_wrapper_t * as3_yajl_wrapper; 
+
+
+as3_yajl_wrapper streamDecoder(void) {
+
+  as3_yajl_wrapper wrapper = (as3_yajl_wrapper)malloc(sizeof(struct as3_yajl_wrapper_t));
+  yajl_gen_config config = { 1, "  " };
+  wrapper->config = config;
+  yajl_parser_config parser_config = { 1, 1 };
+  wrapper->parser_config = parser_config;
+  wrapper->generator = as3_gen_alloc(&wrapper->config, NULL);
+  wrapper->handle = yajl_alloc(&callbacks, &wrapper->parser_config, NULL, (void *) wrapper->generator);
+  return wrapper;
+}
+
+AS3_Val setupStreamDecoder(void * data, AS3_Val args) {
+  return AS3_Number((long)streamDecoder());
+}
+
+AS3_Val decodeStream(void * data, AS3_Val args) {
   yajl_status stat;
-  /* allow comments */
-  yajl_parser_config cfg = { 1, 1 };
+
+  /* ActionScript Argument setup */
+  AS3_Val result = AS3_Undefined();
+  unsigned char* input;
+  int length;
+  unsigned int wrapper_address;
+  unsigned char * str;
+  AS3_ArrayValue(args, "IntType, StrType",&wrapper_address, &input);
+  length = strlen(input);
+
+  as3_yajl_wrapper wrapper = (as3_yajl_wrapper)wrapper_address;
+  //LOG_C("The Current Stack:")
+  //LOG_AS3(wrapper->generator->stack)
+  LOG_C("Parsing Started")
+  LOG_AS3(AS3_Int(length))
+
+  DEBUG_LOG_C("PARSING: ")
+
+  yajl_gen_clear(wrapper->generator);
+  stat = yajl_parse(wrapper->handle, input, length);
+
+  LOG_C("Parsing Complete");
+
+  switch(stat) {
+    case yajl_status_insufficient_data:
+      LOG_C("Insufficient Data, running Data Callback")
+      DEBUG_LOG_C("Continue")
+      DEBUG_LOG_AS3(AS3_Int(wrapper->generator->nested_hash_level))
+      DEBUG_LOG_AS3(AS3_Int(wrapper->generator->nested_array_level))
+      DEBUG_LOG_AS3(wrapper->generator->stack)
+
+      //yajl_free(wrapper->handle);
+      return AS3_Undefined();
+      break;
+    case yajl_status_ok:
+      result = (AS3_Val)wrapper->generator->ctx;
+      LOG_AS3(result)
+      yajl_gen_free(wrapper->generator);
+      return AS3_Object("result: AS3ValType",result);
+      break;
+    case yajl_status_client_canceled:
+    case yajl_status_error:
+      str = yajl_get_error(wrapper->handle, 1, input, length);
+      LOG_C(str)
+      yajl_free_error(wrapper->handle, str);
+      yajl_gen_free(wrapper->generator);
+      yajl_free(wrapper->handle);
+      return AS3_Undefined();
+  }
+
+
+  return result;
+}
+
+AS3_Val decode(void * data, AS3_Val args) {
+  as3_yajl_wrapper wrapper = streamDecoder();
+  yajl_status stat;
 
   /* ActionScript Argument setup */
   AS3_Val result = AS3_Undefined();
@@ -277,30 +366,29 @@ AS3_Val decode(void * data, AS3_Val args) {
   AS3_ArrayValue(args, "StrType",&input);
   length = strlen(input);
 
-  g = as3_gen_alloc(&conf, NULL);
-  hand = yajl_alloc(&callbacks, &cfg, NULL, (void *) g);
-  sztrace("Parsing Started");
-  stat = yajl_parse(hand, input, length);
-  sztrace("Parsing Complete");
+  LOG_C("Parsing Started");
+  LOG_AS3(AS3_Int(length))
+  stat = yajl_parse(wrapper->handle, input, length);
+  LOG_C("Parsing Complete");
+
 
   if (stat != yajl_status_ok &&
       stat != yajl_status_insufficient_data) {
-    unsigned char * str = yajl_get_error(hand, 1, input, length);
+    unsigned char * str = yajl_get_error(wrapper->handle, 1, input, length);
     LOG_C(str)
-    yajl_free_error(hand, str);
-
+    yajl_free_error(wrapper->handle, str);
   } 
   else {
-    result = (AS3_Val)g->ctx;
+    result = (AS3_Val)wrapper->generator->ctx;
     LOG_AS3(result)
-    yajl_gen_clear(g);
+    yajl_gen_clear(wrapper->generator);
   }
 
-  yajl_gen_free(g);
-  yajl_free(hand);
+  yajl_gen_free(wrapper->generator);
+  yajl_free(wrapper->handle);
 
-    LOG_C("After gen free");
-    LOG_AS3(result)
+  LOG_C("After gen free");
+  LOG_AS3(result)
   return result;
 }
 
@@ -308,8 +396,10 @@ int main()
 {
   AS3_Val decode_ = AS3_Function( NULL, decode );
   AS3_Val decodeAsync_ = AS3_FunctionAsync( NULL, decode );
-  AS3_Val airobj = AS3_Object("decode: AS3ValType, decodeAsync: AS3ValType", 
-      decode_, decodeAsync_ );
+  AS3_Val decodeStreamAsync_ = AS3_FunctionAsync( NULL, decodeStream );
+  AS3_Val setupStreamDecoder_  = AS3_Function( NULL, setupStreamDecoder );
+  AS3_Val airobj = AS3_Object("decode: AS3ValType, decodeAsync: AS3ValType, decodeStreamAsync: AS3ValType, setupStreamDecoder: AS3ValType",
+      decode_, decodeAsync_, decodeStreamAsync_, setupStreamDecoder_ );
   AS3_Release( decode_ );
   AS3_LibInit( airobj );
   return 0;

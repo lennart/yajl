@@ -12,5 +12,14 @@ package cc.lmaa.yajl {
     public static function decodeAsync(callback : Function, str : String) : void {
       _yajl.decodeAsync(callback, str);
     }
+
+    public static function setupStreamDecoder() : int {
+      return _yajl.setupStreamDecoder();
+    }
+
+    public static function decodeStreamAsync(completeCallback : Function, decoderId : int, strPart : String) : void {
+//      trace(strPart);
+       _yajl.decodeStreamAsync(completeCallback, decoderId, strPart);
+    }
   }
 }
