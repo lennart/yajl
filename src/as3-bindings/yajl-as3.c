@@ -201,11 +201,7 @@ static void yajl_set_static_value(void * ctx, AS3_Val val, as3_type val_type) {
         break;
       case as3_object:
         AS3_Set(wrapper->stack->val, val, AS3_Null());
-        switch(val_type) {
-          case as3_array:
-          case as3_object:
-            wrapper->stack = pushStack(wrapper->stack, val_type, val);
-        }
+        wrapper->stack = pushStack(wrapper->stack, val_type, val);
         break;
       default:
         LOG_C("Something else on the stack?")
@@ -420,7 +416,7 @@ AS3_Val decodeStream(void * data, AS3_Val args) {
       yajl_free_error(wrapper->handle, str);
       yajl_gen_free(wrapper->generator);
       yajl_free(wrapper->handle);
-      return AS3_Undefined();
+      return AS3_Object("error: AS3ValType",AS3_String(str));
   }
 
 
