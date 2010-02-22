@@ -6,13 +6,6 @@
 #include "yajl/yajl_parse.h"
 #include "yajl/yajl_gen.h"
 
-//void as3_(void* ctx, const char* str, unsigned int len) {
-//  yail_gen wrapper = (yail_gen)ctx;
-//  
-//  sztrace("DO NOTHING");
-//  AS3_Trace(AS3_StringN(str, len));
-//
-//}
 typedef enum {
   yajl_gen_start,
   yajl_gen_map_start,
@@ -24,18 +17,55 @@ typedef enum {
   yajl_gen_error
 } yajl_gen_state;
 
+typedef struct as3_stack_t * as3_stack;
+
 struct yajl_gen_t {
   unsigned int depth;
   unsigned int pretty;
   const char * indentString;
   yajl_gen_state state[YAJL_MAX_DEPTH];
-  AS3_Val stack;
+  as3_stack stack;
   int nested_hash_level;
   int nested_array_level;
   void * ctx; /* yajl_buf */
   /* memory allocation routines */
   yajl_alloc_funcs alloc;
 };
+
+typedef enum {
+  as3_array,
+  as3_object,
+  as3_atom
+} as3_type;
+
+
+struct as3_stack_t {
+  AS3_Val val;
+  as3_stack next;
+  unsigned int length;
+  as3_type type;
+};
+
+as3_stack initStack() {
+  as3_stack stack = (as3_stack)malloc(sizeof(struct as3_stack_t));
+  stack->length = 0;
+  return stack;
+}
+
+as3_stack pushStack(as3_stack oldStack, as3_type type, AS3_Val val) {
+  as3_stack stack = (as3_stack)malloc(sizeof(struct as3_stack_t));
+  stack->length = oldStack->length + 1;
+  stack->type = type;
+  stack->val = val;
+  stack->next = oldStack;
+  return stack;
+}
+
+as3_stack popStack(as3_stack stack) {
+  as3_stack newStack = stack->next;
+  free(stack);
+  return newStack;
+}
 
 yajl_gen as3_gen_alloc2(const yajl_print_t callback,
     const yajl_gen_config * config,
@@ -69,7 +99,7 @@ yajl_gen as3_gen_alloc2(const yajl_print_t callback,
   g->ctx = AS3_Undefined();
   g->nested_hash_level = 0;
   g->nested_array_level = 0;
-  g->stack = AS3_Array("");
+  g->stack = initStack();
 
   return g;
 }
@@ -123,27 +153,66 @@ yajl_gen as3_gen_alloc(const yajl_gen_config * config,
 
 static void yajl_check_end(void * ctx) {
   yajl_gen wrapper = (yajl_gen) ctx;
-  int stack_length = AS3_IntValue(AS3_GetS(wrapper->stack,"length"));
-  if ((stack_length == 1) && (wrapper->nested_hash_level == 0) && (wrapper->nested_array_level == 0)) {
-    wrapper->ctx = AS3_CallS("pop",wrapper->stack,AS3_Array(""));
+//  int stack_length = AS3_IntValue(AS3_GetS(wrapper->stack,"length"));
+  if ((wrapper->stack->length == 1) && (wrapper->nested_hash_level == 0) && (wrapper->nested_array_level == 0)) {
+    wrapper->ctx = wrapper->stack->val;
+    free(popStack(wrapper->stack));
     LOG_C("This is the end")
     LOG_AS3(wrapper->ctx)
   }
   else {
     DEBUG_LOG_C("Continue")
-    DEBUG_LOG_AS3(AS3_Int(stack_length))
+    DEBUG_LOG_AS3(AS3_Int(wrapper->stack->length))
     DEBUG_LOG_AS3(AS3_Int(wrapper->nested_hash_level))
     DEBUG_LOG_AS3(AS3_Int(wrapper->nested_array_level))
   }
 }
 
-static void yajl_set_static_value(void * ctx, AS3_Val val) {
+static void yajl_set_static_value(void * ctx, AS3_Val val, as3_type val_type) {
   yajl_gen wrapper = (yajl_gen) ctx;
+  AS3_Val key;
   DEBUG_LOG_AS3(val)
-  int stack_length = AS3_IntValue(AS3_GetS(wrapper->stack,"length"));
-  if (stack_length > 0) {
-    AS3_Val lastEntry = AS3_CallS("pop",wrapper->stack,AS3_Array(""));
-    if(IS_STRING(lastEntry) || IS_BOOLEAN(lastEntry) || IS_NULL(lastEntry) || IS_NUMBER(lastEntry) || IS_INT(lastEntry) || IS_UNDEFINED(lastEntry))  {
+  //int stack_length = AS3_IntValue(AS3_GetS(wrapper->stack,"length"));
+  if (wrapper->stack->length > 0) {
+    switch(wrapper->stack->type) {
+      case as3_atom:
+        switch(wrapper->stack->next->type) {
+          case as3_object:
+            key = wrapper->stack->val;
+            wrapper->stack = popStack(wrapper->stack);
+            AS3_Set(wrapper->stack->val,key,val);
+            AS3_Release(key);
+            switch(val_type) {
+              case as3_array:
+              case as3_object:
+                wrapper->stack = pushStack(wrapper->stack,val_type, val);
+                break;
+            }
+            break;
+        }
+        break;
+      case as3_array:
+        AS3_CallS("push", wrapper->stack->val, AS3_Array("AS3ValType",val));
+        switch(val_type) {
+          case as3_array:
+          case as3_object:
+            wrapper->stack = pushStack(wrapper->stack, val_type, val);
+        }
+        break;
+      case as3_object:
+        AS3_Set(wrapper->stack->val, val, AS3_Null());
+        switch(val_type) {
+          case as3_array:
+          case as3_object:
+            wrapper->stack = pushStack(wrapper->stack, val_type, val);
+        }
+        break;
+      default:
+        LOG_C("Something else on the stack?")
+
+    }
+    //AS3_Val lastEntry = AS3_CallS("pop",wrapper->stack,AS3_Array(""));
+    /*if(IS_STRING(lastEntry) || IS_BOOLEAN(lastEntry) || IS_NULL(lastEntry) || IS_NUMBER(lastEntry) || IS_INT(lastEntry) || IS_UNDEFINED(lastEntry))  {
       AS3_Val obj = AS3_CallS("pop",wrapper->stack,AS3_Array(""));
       if(IS_OBJECT(obj)) {
         AS3_Set(obj,lastEntry,val);
@@ -174,25 +243,26 @@ static void yajl_set_static_value(void * ctx, AS3_Val val) {
       LOG_C("Something else on the Stack")
       AS3_CallS("push",wrapper->stack,AS3_Array("AS3ValType", lastEntry));
     }
-    AS3_Release(lastEntry);
+    AS3_Release(lastEntry);*/
   }
   else {
-    AS3_CallS("push",wrapper->stack,AS3_Array("AS3ValType", val));
+    wrapper->stack = pushStack(wrapper->stack, val_type, val);
+//    AS3_CallS("push",wrapper->stack,AS3_Array("AS3ValType", val));
   }
 }
 
 static int yajl_found_null(void * ctx) {
-  yajl_set_static_value(ctx,AS3_Null());
+  yajl_set_static_value(ctx,AS3_Null(), as3_atom);
   yajl_check_end(ctx);
   return 1;
 }
 
 static int yajl_found_boolean(void * ctx, int boolean) {
   if(boolean) {
-    yajl_set_static_value(ctx, AS3_True());
+    yajl_set_static_value(ctx, AS3_True(), as3_atom);
   }
   else {
-    yajl_set_static_value(ctx, AS3_False());
+    yajl_set_static_value(ctx, AS3_False(), as3_atom);
   }
   yajl_check_end(ctx);
   return 1;
@@ -200,9 +270,9 @@ static int yajl_found_boolean(void * ctx, int boolean) {
 
 static int yajl_found_number(void * ctx, const char * s, unsigned int l) {
   AS3_Val string = AS3_StringN(s,l);
-  AS3_Val string_class = AS3_NSGet(NULL, "String");
+  AS3_Val string_class = AS3_NSGetS(NULL, "String");
 
-  yajl_set_static_value(ctx, AS3_CallS("parseFloat",NULL,AS3_Array("StrType",string)) );
+  yajl_set_static_value(ctx, AS3_CallS("parseFloat",NULL,AS3_Array("StrType",string)), as3_atom);
   AS3_Release(string);
   AS3_Release(string_class);
   yajl_check_end(ctx);
@@ -211,14 +281,14 @@ static int yajl_found_number(void * ctx, const char * s, unsigned int l) {
 
 static int yajl_found_string(void * ctx, const unsigned char * stringVal,
     unsigned int stringLen) {
-  yajl_set_static_value(ctx, AS3_StringN(stringVal, stringLen));
+  yajl_set_static_value(ctx, AS3_StringN(stringVal, stringLen), as3_atom);
   yajl_check_end(ctx);
   return 1;
 }
 
 static int yajl_found_map_key(void * ctx, const unsigned char * stringVal,
     unsigned int stringLen) {
-  yajl_set_static_value(ctx,AS3_StringN(stringVal, stringLen)); 
+  yajl_set_static_value(ctx,AS3_StringN(stringVal, stringLen), as3_atom); 
   yajl_check_end(ctx);
   return 1;
 }
@@ -226,17 +296,19 @@ static int yajl_found_map_key(void * ctx, const unsigned char * stringVal,
 static int yajl_found_start_map(void * ctx) {    
   yajl_gen wrapper = (yajl_gen)ctx;
   wrapper->nested_hash_level++;
-  yajl_set_static_value(ctx,AS3_Object(""));
+  yajl_set_static_value(ctx,AS3_Object(""), as3_object);
   return 1;
 }
-
 
 static int yajl_found_end_map(void * ctx) {
   yajl_gen wrapper = (yajl_gen)ctx;
   wrapper->nested_hash_level--;
-  if(AS3_IntValue(AS3_GetS(wrapper->stack,"length")) > 1) {
-    AS3_CallS("pop",wrapper->stack,AS3_Array(""));
+  if(wrapper->stack->length > 1) {
+    wrapper->stack = popStack(wrapper->stack);
   }
+/*  if(AS3_IntValue(AS3_GetS(wrapper->stack,"length")) > 1) {
+    AS3_CallS("pop",wrapper->stack,AS3_Array(""));
+  }*/
   yajl_check_end(ctx);
   return 1;
 }
@@ -244,16 +316,19 @@ static int yajl_found_end_map(void * ctx) {
 static int yajl_found_start_array(void * ctx) {
   yajl_gen wrapper = (yajl_gen)ctx;
   wrapper->nested_array_level++;
-  yajl_set_static_value(ctx,AS3_Array(""));
+  yajl_set_static_value(ctx,AS3_Array(""), as3_array);
   return 1;
 }
 
 static int yajl_found_end_array(void * ctx) {
   yajl_gen wrapper = (yajl_gen)ctx;
   wrapper->nested_array_level--;
-  if(AS3_IntValue(AS3_GetS(wrapper->stack,"length")) > 1) {
-    AS3_CallS("pop",wrapper->stack,AS3_Array(""));
+  if(wrapper->stack->length > 1) {
+    wrapper->stack = popStack(wrapper->stack);
   }
+  /*if(AS3_IntValue(AS3_GetS(wrapper->stack,"length")) > 1) {
+    AS3_CallS("pop",wrapper->stack,AS3_Array(""));
+  }*/
   yajl_check_end(ctx);
   return 1;
 }
@@ -279,9 +354,7 @@ struct as3_yajl_wrapper_t {
   yajl_parser_config parser_config;
 };
 
-
 typedef struct as3_yajl_wrapper_t * as3_yajl_wrapper; 
-
 
 as3_yajl_wrapper streamDecoder(void) {
 
@@ -330,7 +403,6 @@ AS3_Val decodeStream(void * data, AS3_Val args) {
       DEBUG_LOG_C("Continue")
       DEBUG_LOG_AS3(AS3_Int(wrapper->generator->nested_hash_level))
       DEBUG_LOG_AS3(AS3_Int(wrapper->generator->nested_array_level))
-      DEBUG_LOG_AS3(wrapper->generator->stack)
 
       //yajl_free(wrapper->handle);
       return AS3_Undefined();
@@ -401,6 +473,9 @@ int main()
   AS3_Val airobj = AS3_Object("decode: AS3ValType, decodeAsync: AS3ValType, decodeStreamAsync: AS3ValType, setupStreamDecoder: AS3ValType",
       decode_, decodeAsync_, decodeStreamAsync_, setupStreamDecoder_ );
   AS3_Release( decode_ );
+  AS3_Release( decodeAsync_ );
+  AS3_Release( decodeStreamAsync_ );
+  AS3_Release( setupStreamDecoder_ );
   AS3_LibInit( airobj );
   return 0;
 };
