@@ -1,8 +1,15 @@
+require 'rubygems'
 require 'fileutils'
-def run cmd
-  puts cmd
-  `#{cmd}`
-end
+require 'rake'
+require 'rake/clean'
+require 'sprout'
+require 'sprout/tasks/sftp_task'
+ROOT= File.dirname(__FILE__)
+
+VERSION= File.exists?(version_file = File.join(ROOT,"SPROUT_VERSION")) ? File.read(version_file).strip : "0.0.0"
+FILES = File.join(File.dirname(__FILE__), 'lib')
+PKG = File.join(File.dirname(__FILE__), 'pkg')
+ARTIFACTS = ENV['CC_BUILD_ARTIFACTS'] || 'artifact'
 QUIET=(ENV["QUIET"] == "yes") || false
 DEBUG=(ENV["DEBUG"] == "yes") || false
 HOME=ENV["ALCHEMY_HOME"]
@@ -13,9 +20,48 @@ CFILES=%w{yajl.c yajl_alloc.c yajl_buf.c yajl_encode.c yajl_lex.c yajl_gen.c yaj
 WORKING_DIR="build"
 AS3_SRC_DIR=File.expand_path "src/as3-bindings"
 YAJL_SRC_DIR=File.expand_path "src"
-  to_o = lambda do |input|
-    "#{File.basename(input,File.extname(input))}.o"
+to_o = lambda do |input|
+  "#{File.basename(input,File.extname(input))}.o"
+end
+
+Dir.glob("#{FILES}/**").each do |file|
+  load file
+
+  name = File.basename(file).split('.rb').join('')
+  task :package => name
+end
+
+CLEAN.add(PKG)
+
+desc "Package all libraries as gems"
+task :package do
+  Dir.glob("#{PKG}/**").each do |file|
+    if(File.directory?(file))
+      FileUtils.rm_rf(file)
+    end
   end
+end
+
+def run cmd
+  puts cmd
+  `#{cmd}`
+end
+namespace :sprout do
+  desc "Zip files for Precompiled Sprout"
+  task :zip => :swc do
+#    zip_me = Dir[File.join(ROOT,"as3","src","**","*"] << File.join(WORKING_DIR,"yajl.swc")
+    target_dir =  File.join(ROOT,"sprout","as3yajl")                          
+    FileUtils.rm_rf target_dir, :verbose => true if File.exists?(target_dir)
+    FileUtils.mkdir_p target_dir , :verbose => true
+    FileUtils.cp_r File.join(ROOT,"as3","src","cc"), target_dir, :verbose => true
+    FileUtils.cp  File.join(WORKING_DIR,"yajl.swc"), target_dir, :verbose => true
+    Dir.chdir(File.join(target_dir,"..")) do
+      name = File.basename(target_dir)
+      run "zip -r #{name}-#{VERSION}.zip #{name}"
+    end
+  end
+end
+
 
 desc "Adds the build directory"
 task :build_directory do
@@ -29,7 +75,7 @@ task :lib  => :objects do
   Dir.chdir(WORKING_DIR) do
     lib = "libyajl.a"
     unless File.exists?(lib)
-    run "#{AR} r #{lib} #{CFILES.map{|f| "#{to_o.call(f)}" }.join(" ")}"
+      run "#{AR} r #{lib} #{CFILES.map{|f| "#{to_o.call(f)}" }.join(" ")}"
     else
       puts "Skipping #{lib}"
     end
