@@ -3,7 +3,7 @@ def run cmd
   puts cmd
   `#{cmd}`
 end
-QUIET=ENV["QUIET"]
+QUIET=(ENV["QUIET"] == "yes") || false
 DEBUG=(ENV["DEBUG"] == "yes") || false
 HOME=ENV["ALCHEMY_HOME"]
 CC=File.join(HOME,%w{achacks gcc})
@@ -56,7 +56,7 @@ end
 desc "Compile SWC"
 task :swc do
   Dir.chdir(WORKING_DIR) do
-    run "#{CC} -Wall -I. -swc#{DEBUG ? " -DDEBUG_LOG" : ""}#{ENV["VERBOSE"] ? " -DVERBOSE" : "-O3"} #{AS3_SRC_DIR+"/yajl-as3.c"} -L. -lyajl -o yajl.swc"
+    run "#{CC} -Wall -I. -swc#{DEBUG ? " -DDEBUG_LOG" : ""}#{" -DVERBOSE_LOG" unless QUIET} -O3 #{AS3_SRC_DIR+"/yajl-as3.c"} -L. -lyajl -o yajl.swc"
   end
 end
 

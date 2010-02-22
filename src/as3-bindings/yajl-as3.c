@@ -110,7 +110,7 @@ yajl_gen as3_gen_alloc(const yajl_gen_config * config,
   return as3_gen_alloc2(NULL, config, afs, NULL);
 }
 
-#ifdef VERBOSE
+#ifdef VERBOSE_LOG
 #define LOG_C(cvalue) sztrace(cvalue); 
 #define LOG_AS3(as3value) AS3_Trace(as3value);
 #else
@@ -203,9 +203,6 @@ static void yajl_set_static_value(void * ctx, AS3_Val val, as3_type val_type) {
         AS3_Set(wrapper->stack->val, val, AS3_Null());
         wrapper->stack = pushStack(wrapper->stack, val_type, val);
         break;
-      default:
-        LOG_C("Something else on the stack?")
-
     }
     //AS3_Val lastEntry = AS3_CallS("pop",wrapper->stack,AS3_Array(""));
     /*if(IS_STRING(lastEntry) || IS_BOOLEAN(lastEntry) || IS_NULL(lastEntry) || IS_NUMBER(lastEntry) || IS_INT(lastEntry) || IS_UNDEFINED(lastEntry))  {
