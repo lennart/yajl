@@ -6,7 +6,7 @@ name = File.basename(__FILE__).split('.').shift
 
 gem_wrap name do |t|
   # version is a dot-delimited, 3 digit version string
-  t.version       = '0.0.0'
+  t.version       = '0.0.1'
   # Short summary of your library or project
   t.summary       = "yajl JSON parser precompiled as SWC"
   # Your name
@@ -18,7 +18,7 @@ gem_wrap name do |t|
   t.sprout_spec   =<<EOF
 - !ruby/object:Sprout::RemoteFileTarget 
   platform: universal
-  url: http://github.com/downloads/lennart/yajl/as3yajl-0.0.0.zip
+  url: http://github.com/downloads/lennart/yajl/as3yajl-0.0.1.zip
   archive_path: as3yajl 
 EOF
 end
