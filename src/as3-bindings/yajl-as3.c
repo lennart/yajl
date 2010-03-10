@@ -106,7 +106,7 @@ yajl_gen as3_gen_alloc2(const yajl_print_t callback,
 
 
 yajl_gen as3_gen_alloc(const yajl_gen_config * config,
-    const yajl_alloc_funcs * afs) {
+  const yajl_alloc_funcs * afs) {
   return as3_gen_alloc2(NULL, config, afs, NULL);
 }
 
@@ -239,6 +239,8 @@ static void yajl_set_static_value(void * ctx, AS3_Val val, as3_type val_type) {
     AS3_Release(lastEntry);*/
   }
   else {
+    DEBUG_LOG_C("Putting first Object on the Stack")
+    DEBUG_LOG_AS3(val)
     wrapper->stack = pushStack(wrapper->stack, val_type, val);
 //    AS3_CallS("push",wrapper->stack,AS3_Array("AS3ValType", val));
   }
@@ -262,13 +264,13 @@ static int yajl_found_boolean(void * ctx, int boolean) {
 }
 
 static int yajl_found_number(void * ctx, const char * s, unsigned int l) {
-  AS3_Val string = AS3_StringN(s,l);
-  AS3_Val string_class = AS3_NSGetS(NULL, "String");
+  AS3_Val parseFloat = AS3_NSGetS(NULL,"parseFloat");
+  DEBUG_LOG_C("Found Number")
+//  yajl_set_static_value(ctx, AS3_CallT(wrapper->wrappedParseFloat,AS3_Undefined(),"AS3ValType",str), as3_atom);
 
-  yajl_set_static_value(ctx, AS3_CallS("parseFloat",NULL,AS3_Array("StrType",string)), as3_atom);
-  AS3_Release(string);
-  AS3_Release(string_class);
+  yajl_set_static_value(ctx,AS3_CallT(parseFloat,AS3_Undefined(), "AS3ValType",AS3_StringN(s,l)), as3_atom);
   yajl_check_end(ctx);
+  AS3_Release(parseFloat);
   return 1;
 }
 
@@ -443,12 +445,20 @@ AS3_Val decode(void * data, AS3_Val args) {
     LOG_C(str)
     yajl_free_error(wrapper->handle, str);
   } 
+  else if (stat == yajl_status_insufficient_data) {
+    DEBUG_LOG_C("Will forcefully complete Parsing")
+    yajl_parse_complete(wrapper->handle);
+    result = (AS3_Val)wrapper->generator->ctx;
+    LOG_AS3(result)
+    yajl_gen_clear(wrapper->generator);
+  }
   else {
     result = (AS3_Val)wrapper->generator->ctx;
     LOG_AS3(result)
     yajl_gen_clear(wrapper->generator);
   }
 
+  LOG_C("Before gen free");
   yajl_gen_free(wrapper->generator);
   yajl_free(wrapper->handle);
 

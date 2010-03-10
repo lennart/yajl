@@ -1,0 +1,96 @@
+require 'rubygems'
+require 'rake'
+require 'rake/clean'
+require 'sprout'
+require 'sprout/tasks/sftp_task'
+
+require 'rake/rdoctask'
+Rake::RDocTask.new do |rdoc|
+  if File.exist?('VERSION')
+    version = File.read('VERSION')
+  else
+    version = ""
+  end
+
+  rdoc.rdoc_dir = 'rdoc'
+  rdoc.title = "sprout-jukeboxapi-src-library #{version}"
+  rdoc.rdoc_files.include('README*')
+  rdoc.rdoc_files.include('lib/**/*.rb')
+end
+
+FILES = File.join(File.dirname(__FILE__), 'lib')
+PKG = File.join(File.dirname(__FILE__), 'pkg')
+ARTIFACTS = ENV['CC_BUILD_ARTIFACTS'] || 'artifact'
+
+Dir.glob("#{FILES}/*.rb").each do |file|
+  load file
+
+  name = File.basename(file).split('.rb').join('')
+  task :package => name
+end
+
+CLEAN.add(PKG)
+
+desc "Package all libraries as gems"
+task :package do
+  Dir.glob("#{PKG}/**").each do |file|
+    if(File.directory?(file))
+      FileUtils.rm_rf(file)
+    end
+  end
+end
+
+desc "Increment Revision"
+task :increment_revision do
+  # library tasks should be incremented independently...
+end
+
+# Optionally load gems from a server other than rubyforge:
+# set_sources 'http://gems.projectsprouts.org'
+sprout 'as3'
+
+############################################
+# Configure your Project Model
+project_model :model do |m|
+  m.project_name            = 'Yajl'
+  m.language                = 'as3'
+  m.background_color        = '#FFFFFF'
+  m.width                   = 970
+  m.height                  = 550
+  # m.use_fdb               = true
+  # m.use_fcsh              = true
+  # m.preprocessor          = 'cpp -D__DEBUG=false -P - - | tail -c +3'
+  # m.preprocessed_path     = '.preprocessed'
+  # m.src_dir               = 'src'
+  # m.lib_dir               = 'lib'
+  # m.swc_dir               = 'lib'
+  # m.bin_dir               = 'bin'
+  # m.test_dir              = 'test'
+  # m.doc_dir               = 'doc'
+  # m.asset_dir             = 'assets'
+  m.library_path += ["../build/yajl.swc"]
+  m.compiler_gem_name     = 'sprout-flex4sdk-tool'
+  m.compiler_gem_version  = '>= 4.0.0'
+  # m.source_path           << "#{m.lib_dir}/somelib"
+  # m.libraries             << :corelib
+end
+
+desc 'Compile and debug the application'
+debug :debug
+
+desc 'Compile run the test harness'
+unit :test
+
+desc 'Compile the optimized deployment'
+deploy :deploy
+
+desc 'Create documentation'
+document :doc
+
+desc 'Compile a SWC file'
+swc :swc
+
+desc 'Compile and run the test harness for CI'
+ci :cruise
+
+task :default => :"jukeboxapi-src"

@@ -24,7 +24,7 @@ to_o = lambda do |input|
   "#{File.basename(input,File.extname(input))}.o"
 end
 
-Dir.glob("#{FILES}/**").each do |file|
+Dir.glob("#{FILES}/*.rb").each do |file|
   load file
 
   name = File.basename(file).split('.rb').join('')
@@ -44,7 +44,7 @@ end
 
 def run cmd
   puts cmd
-  `#{cmd}`
+  puts `#{cmd}`
 end
 namespace :sprout do
   desc "Zip files for Precompiled Sprout"
